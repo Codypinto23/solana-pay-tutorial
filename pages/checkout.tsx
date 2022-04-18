@@ -8,13 +8,14 @@ import {Keypair, Transaction} from "@solana/web3.js";
 import {MakeTransactionInputData, MakeTranscationOutputData} from "./api/makeTransaction";
 import {WalletMultiButton} from "@solana/wallet-adapter-react-ui";
 import Loading from "../components/Loading";
+import {findTransactionSignature, FindTransactionSignatureError} from "@solana/pay";
 
 export default function Checkout() {
     const router = useRouter()
-    const {connection}= useConnection();
+    const {connection} = useConnection();
     //Reads the wallet from the home page. Null if there is no connected wallet
     // sendTransaction lets us send a transaction using the connected wallet
-    const {publicKey,sendTransaction} = useWallet()
+    const {publicKey, sendTransaction} = useWallet()
     const amount = calculatePrice(router.query)
 
     //State to hold API response fields
@@ -73,26 +74,47 @@ export default function Checkout() {
 
     }
 
-    useEffect(()=>{
+    useEffect(() => {
         getTransaction()
-    },[publicKey])
+    }, [publicKey])
 
     //Send the fetched transaction to the connected wallet
-    async function trySendTransaction(){
-        if (!transaction){
+    async function trySendTransaction() {
+        if (!transaction) {
             return
         }
-        try{
-            await sendTransaction(transaction,connection)
-        }catch (err){
-            console.log("err trySendTransaction",err)
+        try {
+            await sendTransaction(transaction, connection)
+        } catch (err) {
+            console.log("err trySendTransaction", err)
         }
     }
 
     //Send the transaction once it's fetched
-    useEffect(()=>{
+    useEffect(() => {
         trySendTransaction()
-    },[transaction])
+    }, [transaction])
+
+    //Check every .5s to see if the transaction has completed
+    useEffect(() => {
+        const interval = setInterval(async () => {
+            try {
+                //Check if there is any transaction for the reference
+                const signatureInfo = await findTransactionSignature(connection, reference, {})
+                console.log("They Paid!!!")
+                router.push('/confirmed')
+            } catch (err) {
+                if (err instanceof FindTransactionSignatureError) {
+                    //No transaction found yet, ignore this error
+                    return
+                }
+                console.error("unknown error", err)
+            }
+        }, 500)
+        return () => {
+            clearInterval(interval)
+        }
+    }, [])
 
     if (!publicKey) {
         return (
@@ -107,9 +129,11 @@ export default function Checkout() {
         <div className="flex flex-col gap-8 items-center">
             <BackLink href='/'>Cancel</BackLink>
             <WalletMultiButton/>
-            {message?
-            <p>{message} Please approve the transaction using your wallet</p>:
-            <p>Creating Transaction ... <Loading/></p>}
+            {message ? <div>
+                    <p>{message} Please approve the transaction using your wallet</p>
+                    <p>Waiting for Approval... <Loading/></p>
+            </div> :
+                <p>Creating Transaction ... <Loading/></p>}
         </div>
     )
 }
