@@ -1,18 +1,18 @@
 export const products = [
   {
-    id: 'box-of-cookies',
-    name: 'Box',
-    description: 'A delicious box of handmade cookies',
-    unitName: 'box', // shows after the price, eg. 0.05 SOL/box
-    priceSol: 0.05,
-    priceUsd: 5,
+    id: 'single-day',
+    name: 'Single Day',
+    description: 'Full day of guided fly fishing. Includes lunch and gear.',
+    unitName: 'trip', // shows after the price, eg. 0.05 SOL/box
+    priceSol: .06,
+    priceUsd: 595,
   },
   {
-    id: 'basket-of-cookies',
-    name: 'Basket',
-    description: 'A large basket of handmade cookies',
-    unitName: 'basket',
-    priceSol: 0.1,
-    priceUsd: 10,
+    id: 'two-days',
+    name: 'Two Days',
+    description: 'Two full days of guided fly fishing. Includes lunch and gear.',
+    unitName: 'trip',
+    priceSol: .12,
+    priceUsd: 1190,
   }
 ]
