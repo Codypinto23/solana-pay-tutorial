@@ -5,7 +5,7 @@ export const products = [
     description: 'Full day of guided fly fishing. Includes lunch and gear.',
     unitName: 'trip', // shows after the price, eg. 0.05 SOL/box
     priceSol: .06,
-    priceUsd: 595,
+    priceUsd: 5.95,
   },
   {
     id: 'two-days',
@@ -13,6 +13,6 @@ export const products = [
     description: 'Two full days of guided fly fishing. Includes lunch and gear.',
     unitName: 'trip',
     priceSol: .12,
-    priceUsd: 1190,
+    priceUsd: 11.90,
   }
 ]

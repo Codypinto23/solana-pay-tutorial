@@ -1,8 +1,9 @@
 import {NextApiRequest, NextApiResponse} from "next";
 import calculatePrice from "../../lib/calculatePrice";
 import {clusterApiUrl, Connection, LAMPORTS_PER_SOL, PublicKey, SystemProgram, Transaction} from "@solana/web3.js";
-import {shopAddress} from "../../lib/addresses";
+import {shopAddress, usdcAddress} from "../../lib/addresses";
 import {WalletAdapterNetwork} from "@solana/wallet-adapter-base";
+import {createTransferCheckedInstruction, getAssociatedTokenAddress, getMint} from "@solana/spl-token";
 
 
 export type MakeTransactionInputData = {
@@ -50,6 +51,15 @@ export default async function handler(
         const endpoint = clusterApiUrl(network)
         const connection = new Connection(endpoint)
 
+        //Get the details about the USDC Token-- gets the metadata
+        const usdcMint = await getMint(connection, usdcAddress)
+        // Get the buyer's USDC token account address-- different from other blockchains
+        // The Solana contract itself is stateless, and it generates accounts to hold the data
+        //So we're getting the addresses for the buyer and shop
+        const buyerUsdcAddress = await getAssociatedTokenAddress(usdcAddress, buyerPublicKey)
+        //Get the shops USDC Token account address
+        const shopUsdcAddress = await getAssociatedTokenAddress(usdcAddress, shopPublicKey)
+
         //Get a recent blockhash to include in the transaction
         //We do this because a transaction should only be valid for a short time. We want it on the latest block of the network
         // the transaction can be rejected if that is too old
@@ -67,11 +77,24 @@ export default async function handler(
         //Lamports are fractions of a SOL, hence why we need BigNumber
         // Transfer instructions expect lamports. There are 1 billions lamports in 1 SOL, so use the constant LAMPORTS_PER_SOL when converting
         // between them
-        const transferInstruction = SystemProgram.transfer({
-            fromPubkey: buyerPublicKey,
-            lamports: amount.multipliedBy(LAMPORTS_PER_SOL).toNumber(),
-            toPubkey: shopPublicKey
-        })
+        /*  const transferInstruction = SystemProgram.transfer({
+              fromPubkey: buyerPublicKey,
+              lamports: amount.multipliedBy(LAMPORTS_PER_SOL).toNumber(),
+              toPubkey: shopPublicKey
+          })*/
+
+        //Create the instruction to send USDC from the buyer to the shop
+        //Instead of using lamports, we need to use the units for the token. Safest way is to multiply by (10 ** decimals) that we
+        // fetch from the  mint metadata
+        //Note here the buyerPublicKey will be the signer key, because we need their authority to transfer USDC from their USDC account
+        const transferInstruction = createTransferCheckedInstruction(
+            buyerUsdcAddress, //source
+            usdcAddress, //mint (token address)
+            shopUsdcAddress, //destination
+            buyerPublicKey, //owner of source address
+            amount.toNumber() * (10 ** (await usdcMint).decimals), //amount to transfer (in units of USDC token)
+            usdcMint.decimals, //decimals of the USDC token
+        )
 
         //Add the reference to the instruction as a key
         //This will mean that this transaction is returned when we query for the reference
@@ -81,8 +104,8 @@ export default async function handler(
         // The Shop here is just a Writer, because their SOL balance will change
         transferInstruction.keys.push({
             pubkey: new PublicKey(reference),
-            isSigner:false,
-            isWritable:false
+            isSigner: false,
+            isWritable: false
         })
 
 
@@ -104,13 +127,13 @@ export default async function handler(
 
         //Return the serialized transaction
         res.status(200).json({
-            transaction:base64,
-            message:"Thanks for your order ! 🎣"
+            transaction: base64,
+            message: "Thanks for your order ! 🎣"
         })
 
     } catch (err) {
-        console.log("makeTransaction err",err)
-        res.status(500).json({error:'error creating transaction'})
+        console.log("makeTransaction err", err)
+        res.status(500).json({error: 'error creating transaction'})
         return
     }
 }
