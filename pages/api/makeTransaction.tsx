@@ -10,6 +10,11 @@ export type MakeTransactionInputData = {
     account: string
 }
 
+type MakeTransactionGetResponse = {
+    label: string,
+    icon: string
+}
+
 export type MakeTranscationOutputData = {
     transaction: string,
     message: string
@@ -19,7 +24,16 @@ type ErrorOutput = {
     error: string
 }
 
-export default async function handler(
+
+function get(res: NextApiResponse<MakeTransactionGetResponse>) {
+    res.status(200).json({
+        label: "GUIDE-X Solana",
+        icon: 'https://guidex-image-storage.nyc3.digitaloceanspaces.com/crypto/trout-crypto-key.svg'
+    })
+}
+
+
+async function post(
     req: NextApiRequest,
     res: NextApiResponse<MakeTranscationOutputData | ErrorOutput>
 ) {
@@ -135,5 +149,18 @@ export default async function handler(
         console.log("makeTransaction err", err)
         res.status(500).json({error: 'error creating transaction'})
         return
+    }
+}
+
+export default async function handler(
+    req: NextApiRequest,
+    res: NextApiResponse<MakeTransactionGetResponse | MakeTranscationOutputData | ErrorOutput>
+) {
+    if (req.method === "GET") {
+        return get(res)
+    } else if (req.method === "POST") {
+        return await post(req, res)
+    } else {
+        return res.status(405).json({error: "Method not allowed"})
     }
 }
