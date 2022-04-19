@@ -4,10 +4,10 @@ import {createAssociatedTokenAccount, createMint, getAccount, mintToChecked} fro
 //read in .env into process.env
 import 'dotenv/config'
 import {WalletAdapterNetwork} from "@solana/wallet-adapter-base";
-import {clusterApiUrl} from "@solana/web3.js/src/util/cluster";
-import {Connection} from "@solana/web3.js/src/connection";
+import {clusterApiUrl} from "@solana/web3.js";
+import {Connection} from "@solana/web3.js";
 import base58 from "bs58";
-import {Keypair} from "@solana/web3.js/src/keypair";
+import {Keypair} from "@solana/web3.js";
 
 //Initialize the Solanaa connection
 const network= WalletAdapterNetwork.Testnet
