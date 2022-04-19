@@ -39,7 +39,8 @@ export default function Confirmed() {
     return (
         <CircularProgressbarWithChildren value={percentage} styles={
             buildStyles({
-                pathColor,
+                pathColor: pathColor,
+                pathTransitionDuration: 1.0,
             })
         }>
             <div style={{textAlign: "center", fontSize: 20}}>
