@@ -73,11 +73,11 @@ async function post(
         }
 
         //We get the shop private key from the .env - this is the same as in our script
-        const shopPrivateKey= process.env.SHOP_PRIVATE_KEY as string
-        if (!shopPrivateKey){
-            res.status(500).json({error:"Shop private key not available"})
+        const shopPrivateKey = process.env.SHOP_PRIVATE_KEY as string
+        if (!shopPrivateKey) {
+            res.status(500).json({error: "Shop private key not available"})
         }
-        const shopKeypair= Keypair.fromSecretKey(base58.decode(shopPrivateKey))
+        const shopKeypair = Keypair.fromSecretKey(base58.decode(shopPrivateKey))
 
 
         const buyerPublicKey = new PublicKey(account)
@@ -89,15 +89,20 @@ async function post(
 
         //Get the buyer and seller coupon token accounts
         // Buyer one may not exist, so we create it (which costs SOL) as the shop account if it doesnt
-        const buyerCouponAddress= await getOrCreateAssociatedTokenAccount(
+        const buyerCouponAccount = await getOrCreateAssociatedTokenAccount(
             connection,
             shopKeypair, //shop pays the fee to create it
             couponAddress, //which token the account is for
             buyerPublicKey, // who the token account belongs to
-        ).then(account=>account.address)
+        )
 
-        console.log("buyerCouponAddress",buyerCouponAddress)
-        const shopCouponAddress= await getAssociatedTokenAddress(couponAddress,shopPublicKey)
+        console.log("buyerCouponAccount", buyerCouponAccount)
+        const shopCouponAddress = await getAssociatedTokenAddress(couponAddress, shopPublicKey)
+
+        //If the buyer has at least 5 coupons, they can use them and get a discount
+
+        // If the buyer has at least 5 coupons, they can use them and get a discount
+        const buyerGetsCouponDiscount = buyerCouponAccount.amount >= 5
 
         //Get the details about the USDC Token-- gets the metadata
         const usdcMint = await getMint(connection, usdcAddress)
@@ -131,6 +136,9 @@ async function post(
               toPubkey: shopPublicKey
           })*/
 
+        // If the buyer has the coupon discount, divide the amount in USDC by 2
+        const amountToPay = buyerGetsCouponDiscount ? amount.dividedBy(2) : amount
+
         //Create the instruction to send USDC from the buyer to the shop
         //Instead of using lamports, we need to use the units for the token. Safest way is to multiply by (10 ** decimals) that we
         // fetch from the  mint metadata
@@ -140,7 +148,7 @@ async function post(
             usdcAddress, //mint (token address)
             shopUsdcAddress, //destination
             buyerPublicKey, //owner of source address
-            amount.toNumber() * (10 ** (await usdcMint).decimals), //amount to transfer (in units of USDC token)
+            amountToPay.toNumber() * (10 ** (await usdcMint).decimals), //amount to transfer (in units of USDC token)
             usdcMint.decimals, //decimals of the USDC token
         )
 
@@ -155,19 +163,42 @@ async function post(
             isSigner: false,
             isWritable: false
         })
-        console.log("transferInstruction 1",transferInstruction)
+        console.log("transferInstruction 1", transferInstruction)
 
 
         // Create the instruction to send the coupon from the shop to the buyer
-        const couponInstruction= createTransferCheckedInstruction(
-            shopCouponAddress, //source account (coupon)
-            couponAddress, // token address (coupon)
-            buyerCouponAddress, //destination account (coupon)
-            shopPublicKey, //own of source account
-            1, //amount to transfer
-            0, //decimals of the token
-        )
-        console.log("couponInstruction 1",couponInstruction)
+        const couponInstruction = buyerGetsCouponDiscount ?
+            // The coupon instruction is to send 5 coupons from the buyer to the shop
+            createTransferCheckedInstruction(
+                buyerCouponAccount.address, //source account (coupon)
+                couponAddress, // token address (coupon)
+                shopCouponAddress, //destination account (coupon)
+                buyerPublicKey, //own of source account
+                5, //amount to transfer
+                0, //decimals of the token
+            ) :
+            //The coupon instruction is to send 1 coupon from the shop to the buyer
+            createTransferCheckedInstruction(
+                shopCouponAddress, //source account (coupon)
+                couponAddress, // token address (coupon)
+                buyerCouponAccount.address, //destination account (coupon)
+                shopPublicKey, //own of source account
+                1, //amount to transfer
+                0, //decimals of the token
+            )
+        console.log("couponInstruction 1", couponInstruction)
+
+        //Add the shop as a signer to the coupon instruction
+        // If the shop is sending a coupon, it will already be a signer
+        // but if the buyer is sending the coupons, the shop won't automatically be a signer
+        // it's useful security to have the shop sign thr transaction
+        //This wil make it so that no matter which transaction is used, it can only be made with the shop's signature
+        couponInstruction.keys.push({
+            pubkey:shopPublicKey,
+            isSigner:true,
+            isWritable:false
+        })
+
 
         //Add both instructions to the transaction
         transaction.add(transferInstruction, couponInstruction)
@@ -177,7 +208,7 @@ async function post(
         //This actually adds some extra security, because now no one can modify this transaction without invalidating the shop's signature
         //As such, when we're reviewing the ecommerce transactions, we don't need to check the transaction details, we just need to check we've signed it
         transaction.partialSign(shopKeypair)
-        console.log("transaction 1",transaction)
+        console.log("transaction 1", transaction)
         //Serialize the transaction and convert to base64 to return it
         // This wil allow us to return it from the API and consume it on the checkout page
         // We pass requireAllSignatures: false when we serialize it, because our transaction requires the Buyer's Sig, and we
@@ -187,7 +218,7 @@ async function post(
             requireAllSignatures: false //This means that we require all signatures to be present
         })
         const base64 = serializedTransaction.toString('base64')
-        console.log("base64 1",base64)
+        console.log("base64 1", base64)
 
         //TODO: Insert into Database the reference and amount
         //In reality you’d want to record this transaction in a database as part of the API call.
@@ -195,7 +226,7 @@ async function post(
         //Return the serialized transaction
         res.status(200).json({
             transaction: base64,
-            message: "Thanks for your order ! 🎣"
+            message:  buyerGetsCouponDiscount ? "50% discount" : "Thanks for your order ! 🎣"
         })
 
     } catch (err) {
