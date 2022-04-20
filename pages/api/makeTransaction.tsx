@@ -1,9 +1,23 @@
 import {NextApiRequest, NextApiResponse} from "next";
 import calculatePrice from "../../lib/calculatePrice";
-import {clusterApiUrl, Connection, LAMPORTS_PER_SOL, PublicKey, SystemProgram, Transaction} from "@solana/web3.js";
-import {shopAddress, usdcAddress} from "../../lib/addresses";
+import {
+    clusterApiUrl,
+    Connection,
+    Keypair,
+    LAMPORTS_PER_SOL,
+    PublicKey,
+    SystemProgram,
+    Transaction
+} from "@solana/web3.js";
+import {couponAddress, shopAddress, usdcAddress} from "../../lib/addresses";
 import {WalletAdapterNetwork} from "@solana/wallet-adapter-base";
-import {createTransferCheckedInstruction, getAssociatedTokenAddress, getMint} from "@solana/spl-token";
+import {
+    createTransferCheckedInstruction,
+    getAssociatedTokenAddress,
+    getMint,
+    getOrCreateAssociatedTokenAccount
+} from "@solana/spl-token";
+import base58 from "bs58";
 
 
 export type MakeTransactionInputData = {
@@ -58,12 +72,32 @@ async function post(
             res.status(400).json({error: "No account provided"})
         }
 
+        //We get the shop private key from the .env - this is the same as in our script
+        const shopPrivateKey= process.env.SHOP_PRIVATE_KEY as string
+        if (!shopPrivateKey){
+            res.status(500).json({error:"Shop private key not available"})
+        }
+        const shopKeypair= Keypair.fromSecretKey(base58.decode(shopPrivateKey))
+
+
         const buyerPublicKey = new PublicKey(account)
-        const shopPublicKey = shopAddress
+        const shopPublicKey = shopKeypair.publicKey
 
         const network = WalletAdapterNetwork.Testnet
         const endpoint = clusterApiUrl(network)
         const connection = new Connection(endpoint)
+
+        //Get the buyer and seller coupon token accounts
+        // Buyer one may not exist, so we create it (which costs SOL) as the shop account if it doesnt
+        const buyerCouponAddress= await getOrCreateAssociatedTokenAccount(
+            connection,
+            shopKeypair, //shop pays the fee to create it
+            couponAddress, //which token the account is for
+            buyerPublicKey, // who the token account belongs to
+        ).then(account=>account.address)
+
+        console.log("buyerCouponAddress",buyerCouponAddress)
+        const shopCouponAddress= await getAssociatedTokenAddress(couponAddress,shopPublicKey)
 
         //Get the details about the USDC Token-- gets the metadata
         const usdcMint = await getMint(connection, usdcAddress)
@@ -121,20 +155,39 @@ async function post(
             isSigner: false,
             isWritable: false
         })
+        console.log("transferInstruction 1",transferInstruction)
 
 
-        //Add the instruction to the transaction
-        transaction.add(transferInstruction)
+        // Create the instruction to send the coupon from the shop to the buyer
+        const couponInstruction= createTransferCheckedInstruction(
+            shopCouponAddress, //source account (coupon)
+            couponAddress, // token address (coupon)
+            buyerCouponAddress, //destination account (coupon)
+            shopPublicKey, //own of source account
+            1, //amount to transfer
+            0, //decimals of the token
+        )
+        console.log("couponInstruction 1",couponInstruction)
 
+        //Add both instructions to the transaction
+        transaction.add(transferInstruction, couponInstruction)
+
+        //Sign the transaction as the shop, which is required to transfer the coupon
+        // We must partial sign because the transfer instruction still requires the user
+        //This actually adds some extra security, because now no one can modify this transaction without invalidating the shop's signature
+        //As such, when we're reviewing the ecommerce transactions, we don't need to check the transaction details, we just need to check we've signed it
+        transaction.partialSign(shopKeypair)
+        console.log("transaction 1",transaction)
         //Serialize the transaction and convert to base64 to return it
         // This wil allow us to return it from the API and consume it on the checkout page
         // We pass requireAllSignatures: false when we serialize it, because our transaction requires the Buyer's Sig, and we
-        // dony have they yet. Will aks for it from their connected wallet on the checkout page
+        // dont have they yet. Will aks for it from their connected wallet on the checkout page
         const serializedTransaction = transaction.serialize({
             //We will need the buyer to sign this transaction after its returned to them
             requireAllSignatures: false //This means that we require all signatures to be present
         })
         const base64 = serializedTransaction.toString('base64')
+        console.log("base64 1",base64)
 
         //TODO: Insert into Database the reference and amount
         //In reality you’d want to record this transaction in a database as part of the API call.

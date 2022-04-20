@@ -58,8 +58,9 @@ export default function Checkout() {
             },
             body: JSON.stringify(body)
         })
-
+        console.log("Return response",response)
         const json = await response.json() as MakeTranscationOutputData
+        console.log("Return json",json)
 
         if (response.status !== 200) {
             console.error(json)
@@ -84,6 +85,7 @@ export default function Checkout() {
             return
         }
         try {
+            console.log("try sending transaction")
             await sendTransaction(transaction, connection)
         } catch (err) {
             console.log("err trySendTransaction", err)
@@ -110,7 +112,7 @@ export default function Checkout() {
                 }
                 console.error("unknown error", err)
             }
-        }, 500)
+        }, 5000)
         return () => {
             clearInterval(interval)
         }
